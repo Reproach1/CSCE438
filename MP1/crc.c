@@ -272,17 +272,11 @@ void *send_messages(void* s) {
 	char buffer[MAX_DATA];
 	
 	while (1) {
-		//get_message(buffer, MAX_DATA);
-		
 		fflush(stdout);
 		get_message(buffer, MAX_DATA);
 		
-		printf("sending message\n");
+		//printf("sending message\n");
 		send(sockfd, buffer, strlen(buffer), 0);
-		
-		//read(sockfd, buffer, MAX_DATA);
-		
-		//printf("%s\n", buffer);
 		
 		if (strncmp(buffer, "quit", 4) == 0) {
 			quit_flag = 1;
@@ -315,7 +309,7 @@ void *read_messages(void* s) {
 	    {
 	        if (FD_ISSET(sockfd, &sockset))
 	        {
-	            printf("reading\n");
+	            //printf("reading\n");
 				r = read(sockfd, buffer, MAX_DATA);
 				if (r > 0) {
 					display_message(buffer);

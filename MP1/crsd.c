@@ -10,6 +10,8 @@
 #include <pthread.h>
 #include "interface.h"
 
+#define MAX_CLIENTS 10
+
 struct Room {
 	char name[10];
 	int sockfd;
@@ -85,10 +87,10 @@ void *process_command(void *s) {
 	
 	read(sockfd, buffer, MAX_DATA);
 	
-	printf("%s\n", buffer);
+	printf("Recieved: %s\nSize: %d\n", buffer, strlen(buffer));
 	
 	int pos = -1;
-	for (int i = 0; i < MAX_DATA; ++i) {
+	for (int i = 0; i < strlen(buffer); ++i) {
 		if (buffer[i] == ' ') {
 			pos = i+1;
 		}
@@ -100,13 +102,15 @@ void *process_command(void *s) {
 		}
 	}
 	
+	printf("Command: %s Param: %s\n", command, param);
+	
 	
 	if (strncmp(command, "CREATE", 6) == 0) {
 		int exists = 0;
-		printf("%d\n", active_rooms);
+		printf("Active rooms: %d\n", active_rooms);
 		for (int i = 0; i < active_rooms; ++i) {
-			printf("%s\n", rooms[i].name);
-			if (strncmp(rooms[i].name, param, 10) == 0) {
+			printf("Comparing %s to %s\n", rooms[i].name, param);
+			if (strcmp(rooms[i].name, param) == 0) {
 				reply.status = FAILURE_ALREADY_EXISTS;
 				send(sockfd, (char *)&reply, sizeof(struct Reply), 0);
 				exists = 1;
@@ -242,25 +246,32 @@ void create_room(int port, char *name) {
 	        }
 	
 	        // iterate backwards in case we need to remove a disconnected client socket
-	        for (int i = n_clients; i >= 0; --i) {
-	        	if (FD_ISSET(client_socks[i], &sock_set)) {
-	        		printf("TCP data incoming from socket #%i...\n", client_socks[i]);
-	               
-	            	int n_bytes = recv(client_socks[i], buffer, sizeof(buffer), 0);
-					if (n_bytes > 0) {
-						printf("%s\n", buffer);
-					}
-					else {
-		            	if (n_bytes == 0) {
-		            		printf("Client with socket #%i disconnected.\n", client_socks[i]);
+	        for (int i = 0; i < MAX_CLIENTS; ++i) {
+	        	if (client_socks[i] >= 0) {
+		        	if (FD_ISSET(client_socks[i], &sock_set)) {
+		        		printf("TCP data incoming from socket #%i...\n", client_socks[i]);
+		               
+		            	int n_bytes = recv(client_socks[i], buffer, sizeof(buffer), 0);
+						if (n_bytes > 0) {
+							printf("Message to be sent: %s\n", buffer);
+							for (int j = 0; j < MAX_CLIENTS; ++j) {
+								if (j != i) {
+									send(client_socks[j], buffer, sizeof(buffer), 0);
+								}
+							}
+						}
+						else {
+			            	if (n_bytes == 0) {
+			            		printf("Client with socket #%i disconnected.\n", client_socks[i]);
+			            	}
+			                else {
+			                	perror("recv(TCP)");
+			                }
+			                
+			                close(client_socks[i]);
+			                client_socks[i] = -1;
 		            	}
-		                else {
-		                	perror("recv(TCP)");
-		                }
-		                
-		                close(client_socks[i]);
-		                client_socks[i] = -1; // remove closed socket at position i
-	            	}
+		        	}
 	        	}
 	        }
 	    }
