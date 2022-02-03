@@ -14,21 +14,6 @@
 
 int quit_flag = 0;
 
-void str_overwrite_stdout() {
-  printf("%s", "> ");
-  fflush(stdout);
-}
-
-void str_trim_lf (char* arr, int length) {
-  int i;
-  for (i = 0; i < length; i++) { // trim \n
-    if (arr[i] == '\n') {
-      arr[i] = '\0';
-      break;
-    }
-  }
-}
-
 /*
  * TODO: IMPLEMENT BELOW THREE FUNCTIONS
  */
@@ -66,8 +51,6 @@ int main(int argc, char** argv)
 			process_chatmode(argv[1], reply.port);
 			break;
 		}
-	
-		
     }
 
     return 0;
@@ -267,6 +250,8 @@ void process_chatmode(const char* host, const int port)
 
 }
 
+
+// writes user input onto socket
 void *send_messages(void* s) {
 	int sockfd = *(int *)s;
 	
@@ -287,6 +272,9 @@ void *send_messages(void* s) {
 	}
 }
 
+
+// reads messages off a socket
+// using select() as a blocker so it doesn't spam empty messages
 void *read_messages(void* s) {
 	int sockfd = *(int *)s;
 	int r;
@@ -320,10 +308,6 @@ void *read_messages(void* s) {
 					break;
 				}
 	        }
-	    }
-	    else if (retval < 0)
-	    {
-	        // check errno/WSAGetLastError(), call perror(), etc ...
 	    }
 	}
 }

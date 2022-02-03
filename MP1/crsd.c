@@ -10,7 +10,7 @@
 #include <pthread.h>
 #include "interface.h"
 
-#define MAX_CLIENTS 10
+#define MAX_CLIENTS 10 //max clients per room
 #define MAX_ROOMS 30
 
 struct Room {
@@ -29,7 +29,8 @@ void *process_command(void *s);
 void run_room(int room_num);
 void create_room(int port, char *name);
 
-
+// main() initializes the chat rooms and
+// waits for clients to connect to server and passes this connection to a thread
 int main(int argc, char** argv) 
 {
 	
@@ -79,6 +80,12 @@ int main(int argc, char** argv)
 }
 
 
+// clients commands are processed individually by a different thread
+// if the CREATE command is successful, the thread opens a new room and becomes the "host" of that room
+// if the JOIN command is successful, the thread passes the port info to the client
+// if the DELETE commmand is successful, the thread shutsdown the listening socket for that room
+// if the LIST command is successfull, the thread passes the names of each active room to the client
+// after the command is processed, the thread dies
 void *process_command(void *s) {
 	int sockfd = *(int *)s;
 	char buffer[MAX_DATA], command[MAX_DATA], param[MAX_DATA];
@@ -109,7 +116,6 @@ void *process_command(void *s) {
 	
 	if (strcmp(command, "CREATE") == 0 && strlen(param) > 0) {
 		int exists = 0;
-		printf("Active rooms: %d\n", active_rooms);
 		for (int i = 0; i < MAX_ROOMS; ++i) {
 			if (strcmp(rooms[i].name, param) == 0 && rooms[i].members != -1) {
 				reply.status = FAILURE_ALREADY_EXISTS;
@@ -206,6 +212,11 @@ void *process_command(void *s) {
 	pthread_detach(pthread_self());
 }
 
+
+// a thread that processed the CREATE command becomes the "host" of the room
+// each room has its own listening socket
+// a new socket is created for each client that connects through the listening socket
+// when the listening socket receives the shutdown flag, all clients are notified and sockets closed
 void create_room(int port, char *name) {
 	int listen_fd, room_id;
 	struct sockaddr_in address;
@@ -293,8 +304,9 @@ void create_room(int port, char *name) {
 	            	break;
 	            }
 	        }
-	
-	        // iterate backwards in case we need to remove a disconnected client socket
+			
+			// for each active member in chatroom, check if they've sent a message
+			//  if they have, send it to every other member
 	        for (int i = 0; i < MAX_CLIENTS; ++i) {
 	        	if (client_socks[i] > 0) {
 		        	if (FD_ISSET(client_socks[i], &sock_set)) {
@@ -325,6 +337,8 @@ void create_room(int port, char *name) {
 	    	perror("select");
 	    }
 	}
+	
+	close(listen_fd);
 	
 	rooms[room_id].members = -1;
 	active_rooms--;
