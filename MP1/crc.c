@@ -52,21 +52,22 @@ int main(int argc, char** argv)
 	
 		int sockfd = connect_to(argv[1], atoi(argv[2]));
     
-		char command[MAX_DATA];
+		char command[MAX_DATA] = {};
         get_command(command, MAX_DATA);
-        
-        printf("%s\n", command);
 
 		struct Reply reply = process_command(sockfd, command);
 		display_reply(command, reply);
 		
+		close(sockfd);
+		
 		touppercase(command, strlen(command) - 1);
 		if (strncmp(command, "JOIN", 4) == 0 && reply.status == SUCCESS) {
-			printf("Now you are in the chatmode\n");
+			printf("Now you are in the chatmode (Press 'Q' to exit chatmode)\n");
 			process_chatmode(argv[1], reply.port);
+			break;
 		}
 	
-		close(sockfd);
+		
     }
 
     return 0;
@@ -275,15 +276,14 @@ void *send_messages(void* s) {
 		fflush(stdout);
 		get_message(buffer, MAX_DATA);
 		
-		//printf("sending message\n");
-		send(sockfd, buffer, strlen(buffer), 0);
-		
-		if (strncmp(buffer, "quit", 4) == 0) {
+		if (strcmp(buffer, "Q") == 0) {
 			quit_flag = 1;
 			break;
 		}
+		
+		send(sockfd, buffer, strlen(buffer), 0);
 	
-		bzero(buffer, MAX_DATA);
+		memset(buffer, '\0', MAX_DATA);
 	}
 }
 
@@ -309,17 +309,15 @@ void *read_messages(void* s) {
 	    {
 	        if (FD_ISSET(sockfd, &sockset))
 	        {
-	            //printf("reading\n");
 				r = read(sockfd, buffer, MAX_DATA);
 				if (r > 0) {
 					display_message(buffer);
+					printf("\n");
 		    		fflush(stdout);
 				}
-				else if (r == 0) {
-					break;
-				}
 				else {
-					memset(buffer, 0, MAX_DATA);	
+					quit_flag = 1;
+					break;
 				}
 	        }
 	    }

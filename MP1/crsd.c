@@ -11,6 +11,7 @@
 #include "interface.h"
 
 #define MAX_CLIENTS 10
+#define MAX_ROOMS 30
 
 struct Room {
 	char name[10];
@@ -19,7 +20,7 @@ struct Room {
 	int port;
 };
 
-struct Room rooms[256];
+struct Room rooms[MAX_ROOMS];
 int active_rooms = 0;
 int PORT = 0;
 
@@ -31,7 +32,13 @@ void create_room(int port, char *name);
 
 int main(int argc, char** argv) 
 {
+	
 	PORT = atoi(argv[1]);
+	
+	for (int i = 0; i < MAX_ROOMS; ++i) {
+		rooms[i].members = -1;
+	}
+	
 	int server_fd, new_socket, valread;
 	struct sockaddr_in address;
 	int opt = 1;
@@ -42,11 +49,6 @@ int main(int argc, char** argv)
 		perror("socket()");
 		exit(EXIT_FAILURE);
 	}
-	
-	//if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
-	//	perror("setsocketopt()");
-	//	exit(EXIT_FAILURE);
-//	}
 	
 	address.sin_family = AF_INET;
 	address.sin_addr.s_addr = INADDR_ANY;
@@ -66,12 +68,9 @@ int main(int argc, char** argv)
 			exit(EXIT_FAILURE);
 		}
 		
-		printf("new connection in main()\n");
-		
 		pthread_t thread_id;
 		void *s = &new_socket;
 		pthread_create(&thread_id, NULL, process_command, s);
-		//pthread_join(thread_id, NULL);
 	}
 	
 	close(server_fd);
@@ -85,9 +84,13 @@ void *process_command(void *s) {
 	char buffer[MAX_DATA], command[MAX_DATA], param[MAX_DATA];
 	struct Reply reply;
 	
-	read(sockfd, buffer, MAX_DATA);
+	int make_room = 0;
 	
-	printf("Recieved: %s\nSize: %d\n", buffer, strlen(buffer));
+	memset(buffer, '\0', MAX_DATA);
+	memset(command, '\0', MAX_DATA);
+	memset(param, '\0', MAX_DATA);
+	
+	read(sockfd, buffer, MAX_DATA);
 	
 	int pos = -1;
 	for (int i = 0; i < strlen(buffer); ++i) {
@@ -102,40 +105,33 @@ void *process_command(void *s) {
 		}
 	}
 	
-	printf("Command: %s Param: %s\n", command, param);
+	touppercase(command, strlen(command));
 	
-	
-	if (strncmp(command, "CREATE", 6) == 0) {
+	if (strcmp(command, "CREATE") == 0 && strlen(param) > 0) {
 		int exists = 0;
 		printf("Active rooms: %d\n", active_rooms);
-		for (int i = 0; i < active_rooms; ++i) {
-			printf("Comparing %s to %s\n", rooms[i].name, param);
-			if (strcmp(rooms[i].name, param) == 0) {
+		for (int i = 0; i < MAX_ROOMS; ++i) {
+			if (strcmp(rooms[i].name, param) == 0 && rooms[i].members != -1) {
 				reply.status = FAILURE_ALREADY_EXISTS;
-				send(sockfd, (char *)&reply, sizeof(struct Reply), 0);
 				exists = 1;
 				break;
 			}
 		}
 		
 		if (exists == 0) {
-			reply.port = active_rooms + PORT + 1;
+			reply.port = PORT + 1;
+			PORT++;
 			
 			reply.num_member = 0;
 			reply.status = SUCCESS;
-			send(sockfd, (char *)&reply, sizeof(struct Reply), 0);
 			
-			printf("Closing temp socket\n");
-			close(sockfd);
-			
-			create_room(reply.port, param);
-			
+			make_room = 1;
 		}
 	}
-	else if (strncmp(command, "JOIN", 4) == 0) {
+	else if (strcmp(command, "JOIN") == 0 && strlen(param) > 0) {
 		int exists = 0;
-		for (int i = 0; i < active_rooms; ++i) {
-			if (strncmp(rooms[i].name, param, 10) == 0) {
+		for (int i = 0; i < MAX_ROOMS; ++i) {
+			if (strcmp(rooms[i].name, param) == 0 && rooms[i].members != -1) {
 				rooms[i].members++;
 				
 				reply.status = SUCCESS;
@@ -150,26 +146,68 @@ void *process_command(void *s) {
 		if (exists == 0) {
 			reply.status = FAILURE_NOT_EXISTS;
 		}
-		
-		send(sockfd, (char *)&reply, sizeof(struct Reply), 0);
-		
-		printf("Closing temp socket\n");
-		close(sockfd);
 	}
-	else if (strncmp(command, "DELETE", 6) == 0) {
+	else if (strcmp(command, "DELETE") == 0 && strlen(param) > 0) {
+		int exists = 0;
+		for (int i = 0; i < MAX_ROOMS; ++i) {
+			if (strcmp(rooms[i].name, param) == 0 && rooms[i].members != -1) {
+				shutdown(rooms[i].sockfd, SHUT_RD);
+				
+				reply.status = SUCCESS;
+				
+				exists = 1;
+				break;
+			}
+		}
 		
+		if (exists == 0) {
+			reply.status = FAILURE_NOT_EXISTS;
+		}
+		
+	}
+	else if (strcmp(command, "LIST") == 0) {
+		int length = 0;
+		
+		memset(buffer, '\0', MAX_DATA);
+		
+		if (active_rooms > 0) {
+			for (int i = MAX_ROOMS - 1; i >= 0; --i) {
+				if (rooms[i].members != -1) {
+					if (strlen(buffer) == 0) {
+						strcpy(buffer, rooms[i].name);
+					}
+					else if (length + strlen(rooms[i].name) + 1 < MAX_DATA) {
+						strcpy(buffer+length, rooms[i].name);
+					}
+					length = length + strlen(rooms[i].name);
+					buffer[length] = ',';
+					length++;
+				}
+			}
+		}
+		else {
+			strcpy(buffer, "empty");
+		}
+		
+		reply.status = SUCCESS;
+		strcpy(reply.list_room, buffer);
 	}
 	else {
-		
+		reply.status = FAILURE_INVALID;
 	}
 	
+	send(sockfd, (char *)&reply, sizeof(struct Reply), 0);
+	close(sockfd);
+	
+	if (make_room == 1) {
+		create_room(reply.port, param);
+	}
 	
 	pthread_detach(pthread_self());
-	
 }
 
 void create_room(int port, char *name) {
-	int listen_fd;
+	int listen_fd, room_id;
 	struct sockaddr_in address;
 	int opt = 1;
 	int addrlen = sizeof(address);
@@ -189,28 +227,34 @@ void create_room(int port, char *name) {
 		exit(EXIT_FAILURE);
 	}
 	
-	printf("%d\n", listen_fd);
-	printf("%d\n", port);
+	for (int i = 0; i < MAX_ROOMS; ++i) {
+		if (rooms[i].members == -1) {
+			room_id = i;
+			break;
+		}
+	}
 	
-	rooms[active_rooms].sockfd = listen_fd;
-	rooms[active_rooms].port = port;
-	rooms[active_rooms].members = 0;
-	strcpy(rooms[active_rooms].name, name);
+	rooms[room_id].port = port;
+	rooms[room_id].sockfd = listen_fd;
+	rooms[room_id].members = 0;
+	strcpy(rooms[room_id].name, name);
 	
 	active_rooms++;
 	
 	char buffer[MAX_DATA];
 
-	int client_socks[10];  /* list of connected client sockets, initially empty */
+	int client_socks[MAX_CLIENTS] = {-1};
 	int retval, n_clients = 0;
 	
 	listen(listen_fd, 5);
 	
 	while(1) {
+		memset(buffer, '\0', MAX_DATA);
+		
 	    int max_sock = -1;
 	    fd_set sock_set;
 	    FD_ZERO(&sock_set);
-	    FD_SET(listen_fd, &sock_set);  // listenSock will be ready-for-ready when it's time to accept()
+	    FD_SET(listen_fd, &sock_set);
 	    
 	    if (listen_fd > max_sock) {
 	    	max_sock = listen_fd;
@@ -232,8 +276,6 @@ void create_room(int port, char *name) {
 	    {
 	        if(FD_ISSET(listen_fd, &sock_set))
 	        {
-	            printf("Client requesting to connect to room...\n");
-	            
 	            int new_fd = accept(listen_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
 	            
 	            if (new_fd >= 0) {
@@ -241,19 +283,23 @@ void create_room(int port, char *name) {
 	            	n_clients++;
 	            }
 	            else {
-	            	perror("accept");
+	            	strcpy(buffer, "Warning: the chat room is closing...\n");
+	            	for (int i = 0; i < MAX_CLIENTS; ++i) {
+	            		if (client_socks[i] > 0) {
+	            			send(client_socks[i], buffer, sizeof(buffer), 0);
+	            			close(client_socks[i]);
+	            		}
+	            	}
+	            	break;
 	            }
 	        }
 	
 	        // iterate backwards in case we need to remove a disconnected client socket
 	        for (int i = 0; i < MAX_CLIENTS; ++i) {
-	        	if (client_socks[i] >= 0) {
+	        	if (client_socks[i] > 0) {
 		        	if (FD_ISSET(client_socks[i], &sock_set)) {
-		        		printf("TCP data incoming from socket #%i...\n", client_socks[i]);
-		               
 		            	int n_bytes = recv(client_socks[i], buffer, sizeof(buffer), 0);
 						if (n_bytes > 0) {
-							printf("Message to be sent: %s\n", buffer);
 							for (int j = 0; j < MAX_CLIENTS; ++j) {
 								if (j != i) {
 									send(client_socks[j], buffer, sizeof(buffer), 0);
@@ -262,12 +308,12 @@ void create_room(int port, char *name) {
 						}
 						else {
 			            	if (n_bytes == 0) {
-			            		printf("Client with socket #%i disconnected.\n", client_socks[i]);
 			            	}
 			                else {
 			                	perror("recv(TCP)");
 			                }
 			                
+			                rooms[room_id].members--;
 			                close(client_socks[i]);
 			                client_socks[i] = -1;
 		            	}
@@ -279,7 +325,7 @@ void create_room(int port, char *name) {
 	    	perror("select");
 	    }
 	}
-	active_rooms--;
 	
-	close(listen_fd);
+	rooms[room_id].members = -1;
+	active_rooms--;
 }
