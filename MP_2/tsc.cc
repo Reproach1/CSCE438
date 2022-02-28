@@ -82,7 +82,7 @@ int Client::connectTo()
     
     status = stub_->Login(&context, request, &reply);
     
-    if (reply.msg() == "USERNAME ALREADY EXISTS") {
+    if (reply.msg() == "FAILURE_ALREADY_EXISTS") {
         return -1;
     }
     
@@ -143,13 +143,16 @@ IReply Client::processCommand(std::string& input)
     
     csce438::Request request;
     request.set_username(username);
-    //request.set_arguments(input);
     
     csce438::Reply reply;
     grpc::Status status;
     
-    if (input == "LIST") {
-        
+    std::string action = input.substr(0, input.find_first_of(' '));
+    std::string arguments = input.substr(input.find_first_of(' ')+1, input.size());
+    
+    request.add_arguments(arguments);
+    
+    if (action == "LIST") {
         status = stub_->List(&context, request, &reply);
         for (int i = 0; i < reply.all_users_size(); ++i) {
             ire.all_users.push_back(reply.all_users(i));
@@ -158,12 +161,26 @@ IReply Client::processCommand(std::string& input)
         for (int i = 0; i < reply.following_users_size(); ++i) {
             ire.following_users.push_back(reply.following_users(i));
         }
-        
+    }
+    else if (action == "FOLLOW") {
+        status = stub_->Follow(&context, request, &reply);
+    }
+    else if (action == "UNFOLLOW") {
+        status = stub_->UnFollow(&context, request, &reply);
     }
     
+    
     if (status.ok()) {
-        std::cout << reply.msg() << std::endl;
-        ire.comm_status = SUCCESS;
+        if (reply.msg() == "SUCCESS")
+            ire.comm_status = SUCCESS;
+        else if (reply.msg() == "FAILURE_NOT_EXISTS")
+            ire.comm_status = FAILURE_NOT_EXISTS;
+        else if (reply.msg() == "FAILURE_ALREADY_EXISTS")
+            ire.comm_status = FAILURE_ALREADY_EXISTS;
+        else if (reply.msg() == "FAILURE_INVALID_USERNAME")
+            ire.comm_status = FAILURE_INVALID_USERNAME;
+        else if (reply.msg() == "FAILURE_INVALID")
+            ire.comm_status = FAILURE_INVALID;
     }
     else {
         ire.comm_status = FAILURE_NOT_EXISTS;

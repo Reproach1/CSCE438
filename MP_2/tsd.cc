@@ -69,6 +69,8 @@ class SNSServiceImpl final : public SNSService::Service {
         
         file2.close();
         
+        reply->set_msg("SUCCESS");
+        
         return Status::OK;
     }
     
@@ -80,6 +82,48 @@ class SNSServiceImpl final : public SNSService::Service {
         // ------------------------------------------------------------
         
         std::string user = request->arguments(0);
+        std::string username = request->username();
+        std::string existing_user;
+        
+        std::ifstream ifile("Database/all_users.txt");
+        
+        bool user_exists = false;
+        while(std::getline(ifile, existing_user)) {
+            if (user == existing_user) {
+                user_exists = true;
+                break;
+            }
+        }
+        
+        ifile.close();
+        
+        if (user_exists) {
+            ifile = std::ifstream("Database/Following/" + username + ".txt");
+            std::vector<std::string> following;
+            
+            while (std::getline(ifile, existing_user)) {
+                following.push_back(existing_user);
+            }
+            
+            ifile.close();
+            
+            std::ofstream ofile("Database/Following/" + username + ".txt");
+            
+            for (int i = 0; i < following.size(); ++i) {
+                ofile << following.at(i) << "\n"
+            }
+            
+            ofile << user << "\n";
+            
+            ofile.close();
+            
+            reply->set_msg("SUCCESS");
+            
+        }
+        else {
+            reply->set_msg("FAILURE_INVALID_USERNAME");
+        }
+        
         
         return Status::OK; 
     }
@@ -108,7 +152,7 @@ class SNSServiceImpl final : public SNSService::Service {
         else {
               for (int i = 0; i < users.size(); ++i) {
                     if (users.at(i) == username) {
-                        reply->set_msg("USERNAME ALREADY EXISTS");
+                        reply->set_msg("FAILURE_ALREADY_EXISTS");
                         return Status::OK;
                     }
               }
@@ -138,6 +182,7 @@ class SNSServiceImpl final : public SNSService::Service {
         std::ofstream newfile("Database/Following/"+username+".txt");
         newfile.close();
         
+        reply->set_msg("SUCCESS");
         return Status::OK;
         
         
