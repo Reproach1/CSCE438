@@ -169,8 +169,10 @@ IReply Client::processCommand(std::string& input)
         status = stub_->UnFollow(&context, request, &reply);
     }
     
-    
-    if (status.ok()) {
+    if (action == "TIMELINE") {
+        ire.comm_status = SUCCESS;
+    }
+    else if (status.ok()) {
         if (reply.msg() == "SUCCESS")
             ire.comm_status = SUCCESS;
         else if (reply.msg() == "FAILURE_NOT_EXISTS")
@@ -207,4 +209,16 @@ void Client::processTimeline()
     // and you can terminate the client program by pressing
     // CTRL-C (SIGINT)
 	// ------------------------------------------------------------
+	grpc::ClientContext context;
+    
+    csce438::Message message;
+    message.set_username(username);
+	
+	std::shared_ptr<grpc::ClientReaderWriter<csce438::Message, csce438::Message>> stream(stub_->Timeline(&context));
+	message.set_msg("Gamer time");
+	
+	while (true) {
+        stream->Write(message);
+	}
+    stream->WritesDone();
 }

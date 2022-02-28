@@ -110,7 +110,7 @@ class SNSServiceImpl final : public SNSService::Service {
             std::ofstream ofile("Database/Following/" + username + ".txt");
             
             for (int i = 0; i < following.size(); ++i) {
-                ofile << following.at(i) << "\n"
+                ofile << following.at(i) << "\n";
             }
             
             ofile << user << "\n";
@@ -134,6 +134,41 @@ class SNSServiceImpl final : public SNSService::Service {
         // request from a user to unfollow one of his/her existing
         // followers
         // ------------------------------------------------------------
+        
+        std::string username = request->username();
+        std::string user = request->arguments(0);
+        std::string existing_user;
+        
+        std::ifstream ifile = std::ifstream("Database/Following/" + username + ".txt");
+        std::vector<std::string> following;
+        
+        while (std::getline(ifile, existing_user)) {
+            following.push_back(existing_user);
+        }
+        
+        ifile.close();
+        
+        std::ofstream ofile("Database/Following/" + username + ".txt");
+        
+        bool exists = false;
+        for (int i = 0; i < following.size(); ++i) {
+            if (following.at(i) != user) {
+                ofile << following.at(i) << "\n";
+            }
+            else {
+                exists = true;
+            }
+        }
+        
+        ofile.close();
+        
+        if (exists) {
+            reply->set_msg("SUCCESS");
+        }
+        else {
+            reply->set_msg("FAILURE_INVALID_USERNAME");
+        }
+        
         return Status::OK;
     }
     
@@ -171,11 +206,17 @@ class SNSServiceImpl final : public SNSService::Service {
         
         std::ofstream ofile("Database/all_users.txt");
         
+        bool already_exists = false;
         for (int i = 0; i < all_users_vec.size(); ++i) {
+            if (all_users_vec.at(i) == username) {
+                already_exists = true;
+            }
             ofile << all_users_vec.at(i) << "\n";
         }
         
-        ofile << username << "\n";
+        if (!already_exists) {
+            ofile << username << "\n";
+        }
         
         ofile.close();
         
@@ -194,6 +235,12 @@ class SNSServiceImpl final : public SNSService::Service {
         // receiving a message/post from a user, recording it in a file
         // and then making it available on his/her follower's streams
         // ------------------------------------------------------------
+        Message message;
+        
+        while (stream->Read(&message)) {
+            std::cout << "something happened";
+            std::cout << message.msg() << std::endl;
+        }
         return Status::OK;
     }
 
