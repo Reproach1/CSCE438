@@ -2,6 +2,8 @@
 #include <string>
 #include <unistd.h>
 #include <grpc++/grpc++.h>
+#include <thread>
+#include <chrono>
 #include "client.h"
 
 #include "sns.grpc.pb.h"
@@ -211,14 +213,36 @@ void Client::processTimeline()
 	// ------------------------------------------------------------
 	grpc::ClientContext context;
     
-    csce438::Message message;
-    message.set_username(username);
+    csce438::Message init_message;
+    init_message.set_username(username);
+	init_message.set_msg("Initiating..");
 	
 	std::shared_ptr<grpc::ClientReaderWriter<csce438::Message, csce438::Message>> stream(stub_->Timeline(&context));
-	message.set_msg("Gamer time");
+	stream->Write(init_message);
 	
-	while (true) {
-        stream->Write(message);
-	}
-    stream->WritesDone();
+	std::thread readThread([stream]() {
+        csce438::Message read_message;
+        while (stream->Read(&read_message)) {
+            time_t timeT = google::protobuf::util::TimeUtil::TimestampToTimeT(read_message.timestamp());
+            displayPostMessage(read_message.username(), read_message.msg(), timeT);
+        }
+    });
+	
+	std::string msg;
+	csce438::Message write_message;
+	google::protobuf::Timestamp timestamp;
+	
+    while (1) {
+        msg = getPostMessage();
+        
+        write_message;
+        timestamp = google::protobuf::util::TimeUtil::GetCurrentTime();
+        
+        write_message.set_username(username);
+        write_message.set_msg(msg);
+        write_message.set_allocated_timestamp(&timestamp);
+        stream->Write(write_message);
+        
+        write_message.release_timestamp();
+    }
 }

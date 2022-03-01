@@ -10,6 +10,8 @@
 #include <vector>
 #include <stdlib.h>
 #include <unistd.h>
+#include <thread>
+#include <chrono>
 #include <google/protobuf/util/time_util.h>
 #include <grpc++/grpc++.h>
 
@@ -43,7 +45,7 @@ class SNSServiceImpl final : public SNSService::Service {
         std::string username = request->username();
         std::string following, user;
         
-        std::ifstream file1("Database/Following/"+username+".txt");
+        std::ifstream file1("Database/Following/"+username+"_following.txt");
         
         if(!file1.is_open()) {
             std::cout << "shits fucked" << std::endl;
@@ -85,20 +87,12 @@ class SNSServiceImpl final : public SNSService::Service {
         std::string username = request->username();
         std::string existing_user;
         
-        std::ifstream ifile("Database/all_users.txt");
+        std::ifstream ifile = std::ifstream("Database/Following/" + user + "_following.txt");
         
-        bool user_exists = false;
-        while(std::getline(ifile, existing_user)) {
-            if (user == existing_user) {
-                user_exists = true;
-                break;
-            }
-        }
-        
-        ifile.close();
-        
-        if (user_exists) {
-            ifile = std::ifstream("Database/Following/" + username + ".txt");
+        if (ifile.is_open() || username == user) {
+            ifile.close();
+            
+            ifile = std::ifstream("Database/Following/" + username + "_following.txt");
             std::vector<std::string> following;
             
             while (std::getline(ifile, existing_user)) {
@@ -107,13 +101,32 @@ class SNSServiceImpl final : public SNSService::Service {
             
             ifile.close();
             
-            std::ofstream ofile("Database/Following/" + username + ".txt");
+            std::ofstream ofile("Database/Following/" + username + "_following.txt");
             
             for (int i = 0; i < following.size(); ++i) {
                 ofile << following.at(i) << "\n";
             }
             
             ofile << user << "\n";
+            
+            ofile.close();
+            
+            ifile = std::ifstream("Database/Followers/" + user + "_followers.txt");
+            std::vector<std::string> followers;
+            
+            while (std::getline(ifile, existing_user)) {
+                followers.push_back(existing_user);
+            }
+            
+            ifile.close();
+            
+            ofile = std::ofstream("Database/Followers/" + user + "_followers.txt");
+            
+            for (int i = 0; i < followers.size(); ++i) {
+                ofile << followers.at(i) << "\n";
+            }
+            
+            ofile << username << "\n";
             
             ofile.close();
             
@@ -139,30 +152,49 @@ class SNSServiceImpl final : public SNSService::Service {
         std::string user = request->arguments(0);
         std::string existing_user;
         
-        std::ifstream ifile = std::ifstream("Database/Following/" + username + ".txt");
+        std::ifstream ifile = std::ifstream("Database/Following/" + username + "_following.txt");
         std::vector<std::string> following;
         
-        while (std::getline(ifile, existing_user)) {
-            following.push_back(existing_user);
-        }
-        
-        ifile.close();
-        
-        std::ofstream ofile("Database/Following/" + username + ".txt");
-        
         bool exists = false;
-        for (int i = 0; i < following.size(); ++i) {
-            if (following.at(i) != user) {
-                ofile << following.at(i) << "\n";
+        while (std::getline(ifile, existing_user)) {
+            if (existing_user != user) {
+                following.push_back(existing_user);
             }
             else {
                 exists = true;
             }
         }
         
-        ofile.close();
+        ifile.close();
         
         if (exists) {
+            
+            std::ofstream ofile("Database/Following/" + username + "_following.txt");
+        
+            for (int i = 0; i < following.size(); ++i) {
+                ofile << following.at(i) << "\n";
+            }
+            ofile.close();
+            
+            ifile = std::ifstream("Database/Followers/" + user + "_followers.txt");
+            std::vector<std::string> followers;
+            
+            while (std::getline(ifile, existing_user)) {
+                followers.push_back(existing_user);
+            }
+            
+            ifile.close();
+            
+            ofile = std::ofstream("Database/Followers/" + user + "_followers.txt");
+            
+            for (int i = 0; i < followers.size(); ++i) {
+                if (followers.at(i) != username) {
+                    ofile << followers.at(i) << "\n";
+                }
+            }
+            
+            ofile.close();
+            
             reply->set_msg("SUCCESS");
         }
         else {
@@ -220,8 +252,28 @@ class SNSServiceImpl final : public SNSService::Service {
         
         ofile.close();
         
-        std::ofstream newfile("Database/Following/"+username+".txt");
-        newfile.close();
+        std::ofstream newfile;
+        
+        ifile = std::ifstream("Database/Following/"+username+"_following.txt");
+        if (!ifile.is_open()) {
+            newfile = std::ofstream("Database/Following/"+username+"_following.txt");
+            newfile.close();
+        }
+        ifile.close();
+        
+        ifile = std::ifstream("Database/Followers/"+username+"_followers.txt");
+        if (!ifile.is_open()) {
+            newfile = std::ofstream("Database/Followers/"+username+"_followers.txt");
+            newfile.close();
+        }
+        ifile.close();
+        
+        ifile = std::ifstream("Database/Timelines/"+username+"_timeline.txt");
+        if (!ifile.is_open()) {
+            newfile = std::ofstream("Database/Timelines/"+username+"_timeline.txt");
+            newfile.close();
+        }
+        ifile.close();
         
         reply->set_msg("SUCCESS");
         return Status::OK;
@@ -235,12 +287,136 @@ class SNSServiceImpl final : public SNSService::Service {
         // receiving a message/post from a user, recording it in a file
         // and then making it available on his/her follower's streams
         // ------------------------------------------------------------
-        Message message;
+        Message setup_message;
+        stream->Read(&setup_message);
         
-        while (stream->Read(&message)) {
-            std::cout << "something happened";
-            std::cout << message.msg() << std::endl;
+        std::string username = setup_message.username();
+        
+        std::thread readThread([stream, username]() {
+            Message read_message;
+            std::ifstream followers_ifile, self_ifile, fol_timeline_ifile;
+            std::ofstream self_ofile, fol_timeline_ofile;
+            
+            std::string user, line;
+            std::vector<std::string> followers;
+            std::vector<std::string> messages;
+            
+            while (stream->Read(&read_message)) {
+                std::string time_str = google::protobuf::util::TimeUtil::ToString(read_message.timestamp());
+                
+                followers_ifile = std::ifstream("Database/Followers/"+username+"_followers.txt");
+                while (std::getline(followers_ifile, user)) {
+                    user = user.substr(0);
+                    fol_timeline_ifile = std::ifstream("Database/Timelines/"+user+"_timeline.txt");
+                    while(std::getline(fol_timeline_ifile, line)) {
+                        messages.push_back(line);
+                    }
+                    fol_timeline_ifile.close();
+                    
+                    fol_timeline_ofile = std::ofstream("Database/Timelines/"+user+"_timeline.txt");
+                    fol_timeline_ofile << username << "(" << time_str << ")" << read_message.msg();
+                    
+                    if (!messages.empty()) {
+                        if (messages.size() == 20) {
+                            messages.erase(messages.begin()+19);
+                        }
+                        for (int i = 0; i < messages.size(); ++i) {
+                            fol_timeline_ofile << messages.at(i) << "\n";
+                        }
+                    }
+                    fol_timeline_ofile.close();
+                }
+                followers_ifile.close();
+                
+                messages.clear();
+                self_ifile = std::ifstream("Database/Timelines/"+username+"_timeline.txt");
+                while(std::getline(self_ifile, line)) {
+                    messages.push_back(line);
+                }
+                self_ifile.close();
+                
+                self_ofile = std::ofstream("Database/Timelines/"+username+"_timeline.txt");
+                self_ofile << username << "(" << time_str << ")" << read_message.msg();
+                
+                if (!messages.empty()) {
+                    if (messages.size() == 20) {
+                        messages.erase(messages.begin()+19);
+                    }
+                    for (int i = 0; i < messages.size(); ++i) {
+                        self_ofile << messages.at(i) << "\n";
+                    }
+                }
+                self_ofile.close();
+                messages.clear();
+            }
+        });
+        
+        // read history
+        Message write_message;
+        std::vector<std::string> history_vec;
+        std::string message_str;
+        
+        std::ifstream ifile("Database/Timelines/"+username+"_timeline.txt");
+        
+        std::string prev_msg;
+        Timestamp timestamp;
+        
+        while (std::getline(ifile, message_str)) {
+            prev_msg = message_str;
+            
+            write_message.set_username(message_str.substr(0, message_str.find_first_of('(')));
+           
+            message_str = message_str.substr(message_str.find_first_of('(') + 1, message_str.size());
+            write_message.set_msg(message_str.substr(message_str.find_first_of(')') + 1, message_str.size()));
+            
+            message_str = message_str.substr(0, message_str.find_first_of(')'));
+            google::protobuf::util::TimeUtil::FromString(message_str, &timestamp);
+            write_message.set_allocated_timestamp(&timestamp);
+            
+            stream->Write(write_message);
+            
+            write_message.release_timestamp();
         }
+        ifile.close();
+    
+        std::string new_message;
+        while (1) {
+            ifile = std::ifstream("Database/Timelines/"+username+"_timeline.txt");
+            while (std::getline(ifile, new_message)) {
+                if (new_message != prev_msg) {
+                    history_vec.push_back(new_message);
+                }
+                else {
+                    break;
+                }
+            }
+            ifile.close();
+            
+            if (!history_vec.empty()) {
+                prev_msg = history_vec.at(0);
+                for (int i = history_vec.size() - 1; i >= 0; --i) {
+                    message_str = history_vec.at(i);
+                    if (username != message_str.substr(0, message_str.find_first_of('('))) {
+                        write_message.set_username(message_str.substr(0, message_str.find_first_of('(')));
+                        
+                        message_str = message_str.substr(message_str.find_first_of('(') + 1, message_str.size());
+                        write_message.set_msg(message_str.substr(message_str.find_first_of(')') + 1, message_str.size()));
+                        
+                        message_str = message_str.substr(0, message_str.find_first_of(')'));
+                        google::protobuf::util::TimeUtil::FromString(message_str, &timestamp);
+                        write_message.set_allocated_timestamp(&timestamp);
+                        
+                        stream->Write(write_message);
+                        
+                        write_message.release_timestamp();
+                    }
+                }
+            }
+            history_vec.clear();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+        
+        
         return Status::OK;
     }
 
