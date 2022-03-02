@@ -31,6 +31,9 @@ tsd: sns.pb.o sns.grpc.pb.o tsd.o
 .PRECIOUS: %.pb.cc
 %.pb.cc: %.proto
 	$(PROTOC) --cpp_out=. $<
+	
+cleanDB:
+	rm -f Database/*.txt Database/Followers/*.txt Database/Following/*.txt Database/Timelines/*.txt
 
 clean:
 	rm -f *.txt *.o *.pb.cc *.pb.h tsc tsd

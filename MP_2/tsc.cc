@@ -225,6 +225,7 @@ void Client::processTimeline()
         while (stream->Read(&read_message)) {
             time_t timeT = google::protobuf::util::TimeUtil::TimestampToTimeT(read_message.timestamp());
             displayPostMessage(read_message.username(), read_message.msg(), timeT);
+            std::cout << std::flush;
         }
     });
 	

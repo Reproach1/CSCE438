@@ -89,48 +89,57 @@ class SNSServiceImpl final : public SNSService::Service {
         
         std::ifstream ifile = std::ifstream("Database/Following/" + user + "_following.txt");
         
-        if (ifile.is_open() || username == user) {
+        if (ifile.is_open() && username != user) {
             ifile.close();
             
             ifile = std::ifstream("Database/Following/" + username + "_following.txt");
             std::vector<std::string> following;
             
+            bool already_following = false;
             while (std::getline(ifile, existing_user)) {
+                if (existing_user == user) {
+                    already_following = true;
+                    break;
+                } 
                 following.push_back(existing_user);
             }
-            
             ifile.close();
             
-            std::ofstream ofile("Database/Following/" + username + "_following.txt");
-            
-            for (int i = 0; i < following.size(); ++i) {
-                ofile << following.at(i) << "\n";
+            if (!already_following) {
+                std::ofstream ofile("Database/Following/" + username + "_following.txt");
+                
+                for (int i = 0; i < following.size(); ++i) {
+                    ofile << following.at(i) << "\n";
+                }
+                
+                ofile << user << "\n";
+                
+                ofile.close();
+                
+                ifile = std::ifstream("Database/Followers/" + user + "_followers.txt");
+                std::vector<std::string> followers;
+                
+                while (std::getline(ifile, existing_user)) {
+                    followers.push_back(existing_user);
+                }
+                
+                ifile.close();
+                
+                ofile = std::ofstream("Database/Followers/" + user + "_followers.txt");
+                
+                for (int i = 0; i < followers.size(); ++i) {
+                    ofile << followers.at(i) << "\n";
+                }
+                
+                ofile << username << "\n";
+                
+                ofile.close();
+                
+                reply->set_msg("SUCCESS");
             }
-            
-            ofile << user << "\n";
-            
-            ofile.close();
-            
-            ifile = std::ifstream("Database/Followers/" + user + "_followers.txt");
-            std::vector<std::string> followers;
-            
-            while (std::getline(ifile, existing_user)) {
-                followers.push_back(existing_user);
+            else {
+                reply->set_msg("FAILURE_ALREADY_EXISTS");
             }
-            
-            ifile.close();
-            
-            ofile = std::ofstream("Database/Followers/" + user + "_followers.txt");
-            
-            for (int i = 0; i < followers.size(); ++i) {
-                ofile << followers.at(i) << "\n";
-            }
-            
-            ofile << username << "\n";
-            
-            ofile.close();
-            
-            reply->set_msg("SUCCESS");
             
         }
         else {
@@ -325,6 +334,7 @@ class SNSServiceImpl final : public SNSService::Service {
                         }
                     }
                     fol_timeline_ofile.close();
+                    messages.clear();
                 }
                 followers_ifile.close();
                 
@@ -358,11 +368,13 @@ class SNSServiceImpl final : public SNSService::Service {
         
         std::ifstream ifile("Database/Timelines/"+username+"_timeline.txt");
         
-        std::string prev_msg;
+        std::string prev_msg = "";
         Timestamp timestamp;
         
         while (std::getline(ifile, message_str)) {
-            prev_msg = message_str;
+            if (prev_msg == "") {
+                prev_msg = message_str;
+            }
             
             write_message.set_username(message_str.substr(0, message_str.find_first_of('(')));
            
@@ -394,7 +406,7 @@ class SNSServiceImpl final : public SNSService::Service {
             
             if (!history_vec.empty()) {
                 prev_msg = history_vec.at(0);
-                for (int i = history_vec.size() - 1; i >= 0; --i) {
+                for (int i = 0; i < history_vec.size(); ++i) {
                     message_str = history_vec.at(i);
                     if (username != message_str.substr(0, message_str.find_first_of('('))) {
                         write_message.set_username(message_str.substr(0, message_str.find_first_of('(')));
